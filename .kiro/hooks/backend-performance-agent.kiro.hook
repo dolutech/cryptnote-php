@@ -1,0 +1,27 @@
+{
+  "enabled": true,
+  "name": "Backend Performance Agent",
+  "description": "Analyzes backend code changes for query efficiency, I/O patterns, caching opportunities, and rate limiting. Identifies N+1 queries, missing indexes, bad pagination, heavy joins, unbounded selects, synchronous blocking, unnecessary file reads, large payload parsing, and suggests improvements with expected impact and risk levels.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "backend/**",
+      "server/**",
+      "api/**",
+      "src/server/**",
+      "src/services/**",
+      "app/Controllers/**",
+      "app/Models/**",
+      "app/Services/**",
+      "app/Helpers/**",
+      "app/Core/Database.php",
+      "database/**/*.php",
+      "whats-api/app/**"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "You are the Backend Performance Agent. Analyze the changes I just made focusing on:\n\n**Query Efficiency:**\n- N+1 query problems\n- Missing indexes (suggest which columns/tables)\n- Bad pagination patterns\n- Heavy joins that could be optimized\n- Unbounded SELECT statements\n\n**I/O Patterns:**\n- Synchronous blocking operations\n- Unnecessary file reads\n- Large payload parsing issues\n\n**Caching:**\n- Opportunities to introduce caching\n- Cache invalidation strategy suggestions\n\n**Rate Limiting:**\n- Request throttling basics\n- API endpoint protection needs\n\n**Output Format:**\n1. Highlight bottlenecks and likely hot paths\n2. For each improvement suggestion provide:\n   - Expected impact (latency/CPU/memory)\n   - Risk level (low/medium/high)\n   - Specific implementation guidance\n\n**Rules:**\n- Do NOT implement changes automatically\n- Do NOT alter database schema\n- Only propose migrations if necessary with clear justification\n- Be specific and actionable in recommendations"
+  }
+}

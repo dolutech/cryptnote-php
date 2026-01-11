@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "CodeRabbit Review Cycle",
+  "description": "Runs CodeRabbit in prompt-only mode after the agent completes a task, captures the review output, and provides it back to the agent for applying recommended fixes.",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "cd \"$(git rev-parse --show-toplevel 2>/dev/null)\" && coderabbit review --prompt-only 2>&1 || { if echo \"$?\" | grep -q \"auth\"; then echo \"CodeRabbit is not authenticated. Please run: coderabbit auth login\"; else echo \"Error: Not a Git repository or CodeRabbit failed.\"; fi; }"
+  }
+}

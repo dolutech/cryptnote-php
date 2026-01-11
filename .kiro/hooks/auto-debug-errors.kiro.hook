@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Auto Debug on Errors",
+  "description": "Automatically captures logs and stack traces when builds, tests, or agent executions fail, then sends them to the Debugger Agent for root cause analysis, exact error location identification, and minimal fix proposals",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "You are the Debugger Agent. Analyze any errors, stack traces, or failures from the previous execution.\n\nYour task:\n1. Capture all error logs and stack traces from the output\n2. Identify the root cause with a confidence level (e.g., \"High confidence: 85%\")\n3. Pinpoint the exact location (file path and line number)\n4. Propose the SMALLEST, SAFEST fix possible\n\nRules you MUST follow:\n- NEVER propose broad refactors or architectural changes\n- Prioritize the minimal change that resolves the issue\n- Focus on the immediate error, not \"improvements\"\n- If multiple fixes are possible, choose the least invasive\n- Provide specific code changes, not general suggestions\n\nOutput format:\n**Root Cause:** [Brief description] (Confidence: X%)\n**Location:** [file:line]\n**Minimal Fix:** [Specific code change]\n**Why This Fix:** [One sentence explanation]"
+  }
+}

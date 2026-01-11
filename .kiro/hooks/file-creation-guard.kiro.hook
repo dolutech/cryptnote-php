@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "File Creation Guard",
+  "description": "Prevents creation of documentation and test files in wrong locations. Guides the agent to use correct directories.",
+  "version": "1",
+  "when": {
+    "type": "onMessage"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Before creating any files, verify file organization rules:\n\n## FILE LOCATION RULES:\n\n### Documentation Files (.md)\n- ✅ CORRECT: /docs/[FILENAME].md\n- ❌ WRONG: /[FILENAME].md (root)\n- EXCEPTIONS: README.md, AGENTS.md, CLAUDE.md (allowed in root)\n\n### Test Files\n- ✅ CORRECT: /tests/test_[feature].php or /tests/[Feature]Test.php\n- ❌ WRONG: /test_[feature].php (root)\n- RULE: Temporary validation tests should be created in /tests and deleted after successful execution\n\n### Temporary Files\n- ✅ CORRECT: /storage/temp/ or /storage/cache/\n- ❌ WRONG: / (root)\n\n## WHEN CREATING FILES:\n1. Check if the file is documentation (.md) → Use /docs\n2. Check if the file is a test → Use /tests\n3. Check if the file is temporary → Use /storage/temp\n4. If creating in root, verify it's an allowed file type\n\n## REMINDER:\nThis is a PREVENTIVE check. If you're about to create a file in the wrong location, STOP and use the correct directory instead."
+  }
+}

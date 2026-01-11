@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Pre-Commit Check",
+  "description": "Executes formatter check, linter, and tests when manually triggered or before commit. If any step fails, captures outputs and sends them to the Debugger Agent to summarize root cause and propose minimal fixes. Provides one consolidated report with failures and next actions without auto-fixing.",
+  "version": "1",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Execute the following pre-commit checks in sequence:\n\n1. Run formatter in non-destructive check mode (e.g., `php-cs-fixer fix --dry-run` or equivalent)\n2. Run linter (e.g., `phpstan analyze` or `psalm` or equivalent)\n3. Run tests (e.g., `phpunit` or equivalent test suite)\n\nFor each step:\n- Execute the command\n- Capture the full output\n- Note whether it passed or failed\n\nAfter all checks complete, provide ONE CONSOLIDATED REPORT that includes:\n- Summary of which checks passed/failed\n- For any failures: the captured output\n- Root cause analysis of failures\n- Minimal fix proposals for each failure\n- Recommended next actions\n\nIMPORTANT RULES:\n- Do NOT auto-fix any issues unless explicitly requested\n- Do NOT modify any files\n- Only analyze and report\n- Keep the report clear and actionable"
+  }
+}

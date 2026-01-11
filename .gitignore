@@ -1,0 +1,31 @@
+# Dependencies
+/vendor/
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/data/
+/examples/*/data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Composer
+composer.lock
+
+# PHPUnit
+.phpunit.result.cache
+/coverage/
+
+# Environment
+.env
+.env.local

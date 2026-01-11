@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Spec Change Impact Planner",
+  "description": "When spec files are edited, automatically run the Architect Agent to validate spec completeness (requirements, scope, acceptance criteria) and the Impact Agent to identify affected codebase areas and generate an implementation plan with impacted modules checklist. This is planning only - no code implementation.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      ".kiro/specs/**",
+      "docs/specs/**"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "I've edited a specification file. Please perform the following analysis (PLANNING ONLY - DO NOT IMPLEMENT):\n\n1. **Architect Agent Review**: Check if the spec is complete with:\n   - Clear requirements\n   - Defined scope\n   - Acceptance criteria\n\n2. **Impact Agent Analysis**: Identify and list:\n   - Which parts of the codebase are affected\n   - What needs to change in each area\n\n3. **Output Format**:\n   - A checklist of impacted modules\n   - A recommended implementation plan\n\nRemember: This is planning and analysis only. Do not implement any code changes."
+  }
+}

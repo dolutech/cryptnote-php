@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Security Guard Workflow",
+  "description": "Automatically scans saved files for secrets, credentials, frontend exposure risks, and insecure storage/crypto patterns. Reports issues by severity with remediation steps.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Run a comprehensive Security Guard analysis on the files I just saved/edited. Analyze ONLY the changed files plus any related config files (.env, .env.example, config files, CI/CD configs, build configs).\n\n**Detection Scope:**\n\n1. **Secrets & Credentials Detection:**\n   - API keys, tokens, access tokens, secret keys\n   - Private keys, certificates, JWT tokens hardcoded\n   - Database URLs with embedded passwords\n   - Cloud credentials (AWS, GCP, Azure keys)\n   - .env file patterns committed to code\n   - High-entropy strings that may be secrets (base64, hex patterns)\n\n2. **Frontend Exposure Detection:**\n   - Secrets used in frontend code (JS, TS, HTML, Vue, React)\n   - Public environment variables misused\n   - Client-side API keys exposed\n   - Credentials embedded in client-side code\n   - Sensitive data in localStorage/sessionStorage\n\n3. **Insecure Storage/Crypto Detection:**\n   - Passwords stored in plain text\n   - Missing password hashing\n   - Weak hashing algorithms (MD5, SHA1)\n   - Missing TLS/HTTPS usage\n   - Insecure random number generation\n   - Hardcoded encryption keys\n   - Encryption without IV/nonce\n   - Sensitive data in logs or error messages\n\n**Output Format:**\n\nGroup findings by severity:\n- **CRITICAL**: Immediate security risk (exposed secrets, plain text passwords)\n- **HIGH**: Serious vulnerability (weak crypto, frontend exposure)\n- **MEDIUM**: Security concern (missing best practices)\n- **LOW**: Potential improvement\n\nFor each issue report:\n- File path and line range\n- Exact risk description\n- Safe remediation steps\n\n**Rules:**\n- DO NOT modify any code automatically\n- If CRITICAL issues found, output: \"🚨 STOP: Fix this before merging/deploying\" followed by minimal fix actions\n- REDACT secret values (show only first 3 and last 2 characters, e.g., \"abc...xy\")\n- Be concise but actionable\n\nAnalyze now and report findings."
+  }
+}

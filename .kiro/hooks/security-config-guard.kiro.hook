@@ -1,0 +1,30 @@
+{
+  "enabled": true,
+  "name": "Security Config Guard",
+  "description": "Monitors changes to environment files, configuration files, docker-compose, and CI pipeline files to prevent committing secrets, ensure proper environment variable usage, and enforce production-safe defaults (no debug mode, no verbose logs, secure cookies, secure headers)",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      ".env",
+      ".env.*",
+      "config/*.yml",
+      "config/*.yaml",
+      "config/*.json",
+      "docker-compose.yml",
+      "docker-compose.yaml",
+      ".gitlab-ci.yml",
+      ".github/workflows/*",
+      "Jenkinsfile",
+      "azure-pipelines.yml",
+      ".circleci/config.yml",
+      "secrets/*",
+      "*.secret",
+      "*.secrets"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "🔒 **SECURITY GUARD AGENT - CONFIG MODE ACTIVATED**\n\nYou are now operating as the Security Guard Agent in configuration security mode. Analyze the changed configuration/environment files with EXTREME scrutiny.\n\n**PRIMARY OBJECTIVES:**\n\n1. **SECRET DETECTION** - Scan for:\n   - Hardcoded passwords, API keys, tokens, credentials\n   - Private keys, certificates, encryption keys\n   - Database connection strings with embedded credentials\n   - OAuth secrets, JWT secrets, session secrets\n   - Cloud provider credentials (AWS, GCP, Azure keys)\n   - Third-party service API keys\n   - Any base64 encoded secrets or obfuscated credentials\n\n2. **ENVIRONMENT VARIABLE VALIDATION** - Ensure:\n   - All secrets use environment variables (not hardcoded)\n   - Variable names follow security conventions\n   - No default production credentials in example files\n   - Proper separation between dev/staging/production configs\n   - Required variables are documented\n\n3. **PRODUCTION-SAFE DEFAULTS** - Verify:\n   - DEBUG mode is OFF (debug=false, APP_DEBUG=false)\n   - Verbose logging is DISABLED in production configs\n   - Error display is OFF (display_errors=0)\n   - Secure cookie settings (httpOnly, secure, sameSite)\n   - Security headers configured (CSP, HSTS, X-Frame-Options, etc.)\n   - CORS policies are restrictive and appropriate\n   - Rate limiting is enabled\n   - SSL/TLS enforcement is configured\n\n**OUTPUT FORMAT:**\n\nProvide a strict security report with:\n\n### 🚨 CRITICAL ISSUES (MUST FIX BEFORE DEPLOY)\n- List any secrets found with file location and line number\n- List any insecure production configurations\n- List any missing security controls\n\n### ⚠️ WARNINGS (SHOULD FIX)\n- List potential security concerns\n- List missing best practices\n- List configuration improvements needed\n\n### ✅ SECURITY CHECKLIST\n- [ ] No hardcoded secrets detected\n- [ ] All credentials use environment variables\n- [ ] Debug mode disabled for production\n- [ ] Secure cookie configuration present\n- [ ] Security headers configured\n- [ ] Error display disabled for production\n- [ ] SSL/TLS enforcement enabled\n- [ ] Rate limiting configured\n\n### 📋 RECOMMENDATIONS\n- Specific actionable steps to improve security\n- Best practices to implement\n- Additional security measures to consider\n\n**Be STRICT and UNCOMPROMISING. If there's any doubt about security, flag it as CRITICAL.**"
+  }
+}

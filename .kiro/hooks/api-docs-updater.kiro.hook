@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "name": "API Documentation Updater",
+  "description": "Monitors changes to public API endpoints, configuration options, and public functions, then triggers the Docs Agent to update README sections, API documentation (OpenAPI/Swagger if present), and suggest changelog entries. Maintains concise, technical documentation without marketing language.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "app/Api/**/*.php",
+      "app/routes.php",
+      "app/Controllers/*Controller.php",
+      ".env",
+      "app/Core/*.php",
+      "docs/API.md",
+      "docs/FINTRIX_API.md"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review the changes made to this file and identify any modifications to:\n1. Public API endpoints (routes, controllers, API methods)\n2. Configuration options (environment variables, settings)\n3. Public functions or interfaces\n\nIf any such changes are detected, update the following documentation:\n- README.md sections that reference the changed functionality\n- API documentation files (docs/API.md, docs/FINTRIX_API.md, or OpenAPI/Swagger specs if present)\n- Suggest a changelog entry in docs/CHANGELOG.md\n\nRequirements:\n- Keep all documentation concise and technical\n- Do not use marketing language or promotional content\n- Focus on factual descriptions of functionality, parameters, and usage\n- Include code examples where appropriate\n- Document breaking changes clearly"
+  }
+}

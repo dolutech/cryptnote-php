@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "File Organization Enforcer",
+  "description": "Ensures all documentation files are in /docs and all test files are in /tests. Automatically moves misplaced files and cleans up temporary test files after validation.",
+  "version": "1",
+  "when": {
+    "type": "afterAgentExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Execute file organization check and cleanup:\n\n## STEP 1: Check Documentation Files\n1. List all .md files in project root (excluding README.md, AGENTS.md, CLAUDE.md)\n2. For each misplaced .md file:\n   - Move it to /docs directory\n   - Report the move\n\n## STEP 2: Check Test Files\n1. List all test files in project root (test_*.php, *_test.php, *Test.php)\n2. For each misplaced test file:\n   - If it's a temporary validation test (starts with test_):\n     - Check if it was already executed (look for output/results)\n     - If executed successfully: DELETE the file\n     - If not executed: MOVE to /tests directory\n   - If it's a permanent test suite:\n     - MOVE to /tests directory\n   - Report all actions taken\n\n## STEP 3: Check Temporary Files\n1. List any other temporary files in root (*.tmp, *.bak, *.backup, *_old.*)\n2. Report them for manual review\n\n## STEP 4: Summary Report\nProvide a summary of:\n- Files moved to /docs\n- Files moved to /tests\n- Files deleted (temporary tests)\n- Any issues or files requiring manual review\n\n## IMPORTANT RULES:\n- NEVER move README.md, AGENTS.md, or CLAUDE.md\n- NEVER delete permanent test suites\n- ALWAYS preserve file content when moving\n- DELETE only temporary test files that have been validated\n- If unsure about a file, report it for manual review"
+  }
+}

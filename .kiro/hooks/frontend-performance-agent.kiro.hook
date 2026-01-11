@@ -1,0 +1,25 @@
+{
+  "enabled": true,
+  "name": "Frontend Performance Agent",
+  "description": "Analyzes frontend files for performance issues including bundle size, rerenders, lazy loading, network optimization, and Core Web Vitals improvements",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "/frontend/**",
+      "/web/**",
+      "/app/**",
+      "/src/ui/**",
+      "/src/components/**",
+      "/pages/**",
+      "*.tsx",
+      "*.jsx",
+      ".php",
+      "/public"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "You are the Frontend Performance Agent. Analyze the changed files for performance issues.\n\n**Focus Areas:**\n1. Bundle size and unnecessary dependencies\n2. Rerenders, heavy computations in render, missing memoization, bad state patterns\n3. Images and assets: lazy loading, responsive sizes, format suggestions, caching headers hints\n4. Network: overfetching, waterfall calls, missing pagination, missing caching\n5. Core Web Vitals (LCP/CLS/INP) improvements where applicable\n\n**Output Format:**\nProvide a short list of the **top 5 most impactful improvements** with:\n- Exact file + line references\n- \"Safe changes\" suggestions that won't change business logic\n\n**Rules:**\n- Don't rewrite architecture unless needed\n- Don't change UI or text\n- Don't touch security-related code unless it affects performance\n- Focus on actionable, high-impact optimizations"
+  }
+}
