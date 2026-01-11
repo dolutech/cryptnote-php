@@ -1,5 +1,9 @@
 # CryptNote PHP Library
 
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/dolutech/cryptnote-php.svg)](https://packagist.org/packages/dolutech/cryptnote-php)
+[![PHP Version](https://img.shields.io/packagist/php-v/dolutech/cryptnote-php.svg)](https://packagist.org/packages/dolutech/cryptnote-php)
+[![License](https://img.shields.io/packagist/l/dolutech/cryptnote-php.svg)](https://packagist.org/packages/dolutech/cryptnote-php)
+
 A standalone PHP library for creating encrypted, self-destructing messages with view limits and optional password protection. Based on the [CryptNote.pro](https://cryptnote.pro) encryption system.
 
 ## Features
@@ -346,6 +350,12 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Links
+
+- **Packagist**: [packagist.org/packages/dolutech/cryptnote-php](https://packagist.org/packages/dolutech/cryptnote-php)
+- **GitHub**: [github.com/dolutech/cryptnote-php](https://github.com/dolutech/cryptnote-php)
+- **CryptNote.pro**: [cryptnote.pro](https://cryptnote.pro)
 
 ## Credits
 
