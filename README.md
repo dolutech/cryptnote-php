@@ -1,6 +1,6 @@
 # CryptNote PHP Library
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?style=flat-square)](https://github.com/dolutech/cryptnote-php/releases/tag/v0.1.0)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg?style=flat-square)](https://github.com/dolutech/cryptnote-php/releases/tag/v0.2.0)
 [![PHP](https://img.shields.io/badge/php-%3E%3D8.0-8892BF.svg?style=flat-square)](https://php.net)
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](https://github.com/dolutech/cryptnote-php/blob/main/LICENSE)
 [![Packagist](https://img.shields.io/badge/packagist-dolutech%2Fcryptnote--php-orange.svg?style=flat-square)](https://packagist.org/packages/dolutech/cryptnote-php)
@@ -10,14 +10,16 @@ A standalone PHP library for creating encrypted, self-destructing messages with 
 
 ## Features
 
-- 🔐 **AES-256-CBC Encryption** - Military-grade encryption for your messages
-- 🔑 **Optional Password Protection** - Add an extra layer of security with PBKDF2 key derivation
-- 👁️ **View Limits** - Messages self-destruct after a specified number of views
-- ⏰ **Time Expiration** - Set messages to expire after a certain time
-- 📝 **Markdown/HTML Support** - Store and retrieve formatted content
-- 🗄️ **SQLite Storage** - Zero-configuration database included
-- 🧹 **Auto Cleanup** - Automatic removal of old, unviewed messages
-- 🔒 **Secure Deletion** - Data is overwritten before deletion
+- 🔐 **AES-256-GCM (default) with AEAD** — authenticated encryption by default; legacy v1 CBC+HMAC remains for compatibility
+- 🔑 **Optional Password Protection** — PBKDF2 + versioned encryption; configurable min length and validator
+- 👁️ **View Limits** — Messages self-destruct after a specified number of views
+- ⏰ **Time Expiration** — Set messages to expire after a certain time
+- 📝 **Markdown/HTML Support** — Store and retrieve formatted content
+- 🗄️ **SQLite Storage** — Zero-configuration database included
+- 🧹 **Auto Cleanup** — Automatic removal of old, unviewed messages
+- 🔒 **Secure Deletion** — Optional SQLite secure_delete/DELETE journal for stronger erasure
+- 🛡️ **Privacy Mode** — Obfuscate status for missing/expired notes
+- 🗝️ **Key Wrapping** — Optional wrapping key to protect stored per-note keys
 
 ## Requirements
 
@@ -51,8 +53,11 @@ require_once 'path/to/library-open/src/CryptNoteStandalone.php';
 <?php
 use CryptNote\CryptNote;
 
-// Initialize with default settings
-$cryptnote = new CryptNote();
+// Initialize with default settings (v2 AES-256-GCM)
+$cryptnote = new CryptNote([
+    'encryption_method' => 'AES-256-GCM',
+    'encryption_version' => 'v2',
+]);
 
 // Create an encrypted note
 $result = $cryptnote->create('This is a secret message!', [
@@ -160,8 +165,9 @@ $cryptnote = new CryptNote([
     // Database path (default: ./data/cryptnote.db)
     'db_path' => '/path/to/your/database.db',
     
-    // Encryption method (default: AES-256-CBC)
-    'encryption_method' => 'AES-256-CBC',
+    // Encryption (default: AES-256-GCM with AEAD)
+    'encryption_method' => 'AES-256-GCM',
+    'encryption_version' => 'v2', // use 'v1' only for legacy CBC payloads
     
     // Token length in bytes (default: 32, produces 64 hex chars)
     'token_length' => 32,
@@ -169,8 +175,21 @@ $cryptnote = new CryptNote([
     // Maximum content length (default: 50000)
     'max_content_length' => 50000,
     
+    // Password policy
+    'password_min_length' => 12,
+    'password_validator' => null,  // optional callable
+    'require_password' => false,   // force all notes to have a password
+    
     // PBKDF2 iterations for password derivation (default: 100000)
     'pbkdf2_iterations' => 100000,
+    
+    // Key handling
+    'enable_key_wrapping' => false,
+    'wrapping_key' => null,        // provide a wrapping key when enabled
+    
+    // Privacy and deletion controls
+    'privacy_mode' => false,       // hide status details for missing/expired/invalid
+    'secure_delete' => false,      // enable SQLite secure_delete + delete journal
     
     // Enable automatic cleanup (default: true)
     'auto_cleanup' => true,
@@ -187,7 +206,8 @@ $cryptnote = new CryptNote([
 
 ```php
 $crypto = new CryptNoteStandalone([
-    'encryption_method' => 'AES-256-CBC',
+    'encryption_method' => 'AES-256-GCM',
+    'encryption_version' => 'v2',
     'pbkdf2_iterations' => 100000,
 ]);
 ```
@@ -297,11 +317,12 @@ Generate a secure random password.
 
 1. **Database Security**: Ensure your SQLite database file is not publicly accessible. Store it outside the web root.
 2. **HTTPS**: Always use HTTPS when transmitting tokens or passwords
-3. **Password Strength**: Minimum 6 characters required. Encourage users to use strong passwords
-4. **Key Storage**: Never log or expose encryption keys
-5. **Secure Deletion**: The library overwrites data before deletion, but consider disk-level encryption for additional security
-6. **PBKDF2**: Uses 100,000 iterations by default. For high-security applications, consider increasing or using Argon2id
-7. **Rate Limiting**: Implement rate limiting in your application to prevent brute-force attacks on password-protected notes
+3. **Password Strength**: Minimum 12 characters required by default; enforce stronger policies with `password_validator` or `require_password` as needed.
+4. **Key Storage**: Never log or expose encryption keys; consider enabling `enable_key_wrapping` with an application wrapping key.
+5. **Secure Deletion**: Enable `secure_delete` for SQLite secure deletion (DELETE journal + secure_delete pragma); pair with disk-level encryption for additional assurance.
+6. **PBKDF2**: Uses 100,000 iterations by default. For high-security applications, consider increasing or using Argon2id.
+7. **Rate Limiting**: Implement rate limiting in your application to prevent brute-force attacks on password-protected notes.
+8. **Privacy Mode**: Enable `privacy_mode` to avoid leaking existence/expiration of notes via `status()` responses.
 
 ## Building a Web Interface
 

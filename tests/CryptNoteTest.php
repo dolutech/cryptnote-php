@@ -61,7 +61,7 @@ class CryptNoteTest extends TestCase
 
     public function testCreateWithPassword(): void
     {
-        $result = $this->cryptnote->create('Test message', ['password' => 'secret123']);
+        $result = $this->cryptnote->create('Test message', ['password' => 'secretpassword123']);
 
         $this->assertTrue($result['has_password']);
     }
@@ -91,9 +91,9 @@ class CryptNoteTest extends TestCase
     public function testCreateShortPasswordThrows(): void
     {
         $this->expectException(Exception::class);
-        $this->expectExceptionMessage('Password must be at least 6 characters');
+        $this->expectExceptionMessage('Password must be at least 12 characters');
 
-        $this->cryptnote->create('Test', ['password' => 'abc12']);
+        $this->cryptnote->create('Test', ['password' => 'short12345']);
     }
 
     // ==================== VIEW TESTS ====================
@@ -127,25 +127,25 @@ class CryptNoteTest extends TestCase
 
     public function testViewWithPassword(): void
     {
-        $created = $this->cryptnote->create('Secret', ['password' => 'pass123', 'max_views' => 2]);
+        $created = $this->cryptnote->create('Secret', ['password' => 'secretpassword123', 'max_views' => 2]);
 
-        $viewed = $this->cryptnote->view($created['token'], 'pass123');
+        $viewed = $this->cryptnote->view($created['token'], 'secretpassword123');
         $this->assertEquals('Secret', $viewed['content']);
     }
 
     public function testViewWithWrongPasswordThrows(): void
     {
-        $created = $this->cryptnote->create('Secret', ['password' => 'correct', 'max_views' => 2]);
+        $created = $this->cryptnote->create('Secret', ['password' => 'correctpassword1', 'max_views' => 2]);
 
         $this->expectException(Exception::class);
         $this->expectExceptionMessage('Incorrect password');
 
-        $this->cryptnote->view($created['token'], 'wrong');
+        $this->cryptnote->view($created['token'], 'wrongpassword12');
     }
 
     public function testViewWithoutRequiredPasswordThrows(): void
     {
-        $created = $this->cryptnote->create('Secret', ['password' => 'pass123', 'max_views' => 2]);
+        $created = $this->cryptnote->create('Secret', ['password' => 'secretpassword123', 'max_views' => 2]);
 
         $this->expectException(Exception::class);
         $this->expectExceptionMessage('Password required');
@@ -216,7 +216,7 @@ class CryptNoteTest extends TestCase
     public function testGetStats(): void
     {
         $this->cryptnote->create('Test 1');
-        $this->cryptnote->create('Test 2', ['password' => 'pass123']);
+        $this->cryptnote->create('Test 2', ['password' => 'secretpassword123']);
         $this->cryptnote->create('Test 3', ['expire_minutes' => 60]);
 
         $stats = $this->cryptnote->getStats();

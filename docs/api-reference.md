@@ -52,10 +52,18 @@ Initialize CryptNote with configuration options.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `db_path` | `string` | `./data/cryptnote.db` | Path to SQLite database file |
-| `encryption_method` | `string` | `AES-256-CBC` | OpenSSL cipher method |
+| `encryption_method` | `string` | `AES-256-GCM` | OpenSSL cipher method (GCM default, AEAD) |
+| `encryption_version` | `string` | `v2` | `v2` (AEAD) or legacy `v1` (CBC+HMAC) |
 | `token_length` | `int` | `32` | Token length in bytes (produces 64 hex chars) |
 | `max_content_length` | `int` | `50000` | Maximum content length in characters |
 | `pbkdf2_iterations` | `int` | `100000` | PBKDF2 iterations for password derivation |
+| `password_min_length` | `int` | `12` | Minimum password length enforced on create |
+| `password_validator` | `callable|null` | `null` | Custom password validation callback |
+| `require_password` | `bool` | `false` | Require passwords for all notes |
+| `enable_key_wrapping` | `bool` | `false` | Wrap per-note keys with `wrapping_key` |
+| `wrapping_key` | `string|null` | `null` | Application-provided wrapping key material |
+| `privacy_mode` | `bool` | `false` | Hide status details for missing/expired/invalid tokens |
+| `secure_delete` | `bool` | `false` | Use SQLite DELETE journal + secure_delete pragma |
 | `auto_cleanup` | `bool` | `true` | Enable automatic cleanup of old records |
 | `cleanup_days` | `int` | `15` | Days after which unviewed records are cleaned |
 | `base_url` | `string` | `null` | Base URL for generating share links |
@@ -98,7 +106,7 @@ Create an encrypted note.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `password` | `string\|null` | `null` | Optional password (min 6, max 100 chars) |
+| `password` | `string\|null` | `null` | Optional password (min 12, max 100 chars) |
 | `max_views` | `int` | `1` | Maximum views before destruction (1-100) |
 | `expire_minutes` | `int\|null` | `null` | Minutes until expiration (1-10080, max 7 days) |
 | `is_markdown` | `bool` | `false` | Whether content is Markdown |
@@ -126,7 +134,7 @@ Create an encrypted note.
 |-----------|-----------|
 | `Exception` | Content is empty |
 | `Exception` | Content exceeds maximum length |
-| `Exception` | Password less than 6 characters |
+| `Exception` | Password less than 12 characters |
 | `Exception` | Password exceeds 100 characters |
 | `Exception` | Failed to generate unique token |
 
@@ -367,7 +375,8 @@ Initialize standalone encryption utilities.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `encryption_method` | `string` | `AES-256-CBC` | OpenSSL cipher method |
+| `encryption_method` | `string` | `AES-256-GCM` | OpenSSL cipher method (GCM default, AEAD) |
+| `encryption_version` | `string` | `v2` | `v2` (AEAD) or legacy `v1` (CBC+HMAC) |
 | `pbkdf2_iterations` | `int` | `100000` | PBKDF2 iterations for password derivation |
 
 #### Exceptions
@@ -380,14 +389,18 @@ Initialize standalone encryption utilities.
 
 ```php
 $crypto = new CryptNoteStandalone([
-    'encryption_method' => 'AES-256-CBC',
+    'encryption_method' => 'AES-256-GCM',
+    'encryption_version' => 'v2',
     'pbkdf2_iterations' => 150000,
 ]);
 ```
 
 ---
 
+> **Note:** CryptNoteStandalone uses the same AEAD v2/v1 formats as `CryptNote` for compatibility. Prefer v2 (AES-256-GCM) unless you must interoperate with legacy v1 CBC+HMAC payloads.
+
 ### generateToken()
+
 
 ```php
 public function generateToken(int $length = 32): string
@@ -445,7 +458,7 @@ $key = $crypto->generateKey();
 public function encrypt(string $content, string $key): string
 ```
 
-Encrypt content using AES-256-CBC.
+Encrypt content using AES-256-GCM by default (legacy AES-256-CBC when `encryption_version` = `v1`).
 
 #### Parameters
 
@@ -481,7 +494,7 @@ $encrypted = $crypto->encrypt('Secret message', $key);
 public function decrypt(string $encryptedData, string $key): string
 ```
 
-Decrypt content using AES-256-CBC.
+Decrypt content using AES-256-GCM by default (legacy AES-256-CBC when `encryption_version` = `v1`).
 
 #### Parameters
 
@@ -518,7 +531,7 @@ echo $decrypted; // "Secret message"
 public function encryptWithPassword(string $content, string $key, string $password): string
 ```
 
-Encrypt content with password protection using AES-256-CBC and PBKDF2.
+Encrypt content with password protection using AES-256-GCM by default (legacy AES-256-CBC with HMAC when `encryption_version` = `v1`).
 
 #### Parameters
 
@@ -555,7 +568,7 @@ $encrypted = $crypto->encryptWithPassword('Secret', $key, 'userPassword123');
 public function decryptWithPassword(string $encryptedData, string $key, string $password): string
 ```
 
-Decrypt content with password using AES-256-CBC and PBKDF2.
+Decrypt content with password using AES-256-GCM by default (legacy AES-256-CBC with HMAC when `encryption_version` = `v1`).
 
 #### Parameters
 

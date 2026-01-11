@@ -11,6 +11,10 @@ use CryptNote\CryptNote;
 
 $cryptnote = new CryptNote([
     'db_path' => __DIR__ . '/data/notes.db',
+    'encryption_method' => 'AES-256-GCM',
+    'encryption_version' => 'v2',
+    'password_min_length' => 12,
+    'privacy_mode' => true,
 ]);
 
 $token = $_GET['token'] ?? '';

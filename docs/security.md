@@ -27,8 +27,8 @@ CryptNote uses a layered security approach to protect sensitive data:
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │                    Layer 1: Encryption                   │    │
 │  │                                                          │    │
-│  │   Content ──▶ AES-256-CBC ──▶ Encrypted Data            │    │
-│  │              (Random IV)                                 │    │
+│  │   Content ──▶ AES-256-GCM ──▶ Encrypted Data (AEAD)     │    │
+│  │              (Random 12-byte IV/nonce, 16-byte auth tag) │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                           │                                      │
 │                           ▼                                      │
@@ -67,9 +67,28 @@ CryptNote uses a layered security approach to protect sensitive data:
 
 ## Encryption Details
 
-### AES-256-CBC
+### AES-256-GCM (Default)
 
-CryptNote uses AES-256-CBC (Advanced Encryption Standard with 256-bit key in Cipher Block Chaining mode) as the default encryption method.
+CryptNote defaults to AES-256-GCM (AEAD) for authenticated encryption.
+
+**Specifications:**
+- **Algorithm**: AES (Rijndael)
+- **Key Size**: 256 bits (32 bytes)
+- **IV (nonce)**: 12 bytes per encryption
+- **Auth Tag**: 16 bytes (GCM authentication tag)
+
+**Data Format (v2, no password):**
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Base64 Encoded (v2)                                          │
+├──────────────────────────────────────────────────────────────┤
+│  IV (12 bytes) │ Auth Tag (16 bytes) │ Encrypted Content     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### AES-256-CBC (Legacy)
+
+Legacy AES-256-CBC with HMAC-SHA256 is available via `encryption_version` = `v1` for backward compatibility.
 
 **Specifications:**
 - **Algorithm**: AES (Rijndael)
@@ -77,14 +96,15 @@ CryptNote uses AES-256-CBC (Advanced Encryption Standard with 256-bit key in Cip
 - **Block Size**: 128 bits (16 bytes)
 - **Mode**: CBC (Cipher Block Chaining)
 - **IV**: Random 16 bytes per encryption
+- **HMAC**: SHA-256 for integrity verification (32 bytes)
 
-**Data Format (without password):**
+**Data Format (v1, no password):**
 ```
-┌──────────────────────────────────────────────────┐
-│  Base64 Encoded                                   │
-├──────────────────────────────────────────────────┤
-│  IV (16 bytes) │ Encrypted Content               │
-└──────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Base64 Encoded (v1)                                          │
+├──────────────────────────────────────────────────────────────┤
+│  IV (16 bytes) │ Encrypted Content │ HMAC-SHA256 (32 bytes)  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Generation
@@ -162,12 +182,12 @@ This provides:
 
 | Requirement | Value |
 |-------------|-------|
-| Minimum length | 6 characters |
+| Minimum length | 12 characters |
 | Maximum length | 100 characters |
 | Character set | Any UTF-8 characters |
 
 **Recommendations:**
-- Use at least 12 characters
+- Use at least 16 characters for high-security environments
 - Mix uppercase, lowercase, numbers, and symbols
 - Use the built-in password generator for strong passwords
 
@@ -377,14 +397,14 @@ Mitigation: Require strong passwords, implement rate limiting
 
 ### Cryptographic Limitations
 
-1. **CBC Mode**: Vulnerable to padding oracle attacks if error messages differ
-   - Mitigation: Use generic error messages
+1. **CBC Mode (v1)**: Legacy CBC mode with HMAC provides integrity but is less efficient than GCM
+   - Mitigation: Use default GCM mode (v2) for new implementations
 
-2. **No Authentication**: AES-CBC doesn't provide integrity verification
-   - Mitigation: Consider AES-GCM for authenticated encryption
+2. **Key in Database**: Encryption key stored alongside encrypted data
+   - Mitigation: Use password protection or enable `key_wrapping` for sensitive content
 
-3. **Key in Database**: Encryption key stored alongside encrypted data
-   - Mitigation: Use password protection for sensitive content
+3. **PBKDF2 vs Argon2**: PBKDF2 is used for password derivation
+   - Mitigation: For maximum security, consider Argon2id in future versions
 
 ### Operational Limitations
 

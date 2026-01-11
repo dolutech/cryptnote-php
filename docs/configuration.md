@@ -21,10 +21,18 @@ The main `CryptNote` class accepts a configuration array in its constructor.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `db_path` | `string` | `./data/cryptnote.db` | Path to SQLite database file |
-| `encryption_method` | `string` | `AES-256-CBC` | OpenSSL cipher method |
+| `encryption_method` | `string` | `AES-256-GCM` | OpenSSL cipher method (GCM recommended default) |
+| `encryption_version` | `string` | `v2` | `v2` (AEAD) or legacy `v1` (CBC+HMAC) |
 | `token_length` | `int` | `32` | Token length in bytes |
 | `max_content_length` | `int` | `50000` | Maximum content length in characters |
 | `pbkdf2_iterations` | `int` | `100000` | PBKDF2 iterations for password derivation |
+| `password_min_length` | `int` | `12` | Minimum password length enforced on create |
+| `password_validator` | `callable|null` | `null` | Custom password validation callback (return false to reject) |
+| `require_password` | `bool` | `false` | Require passwords for all notes |
+| `enable_key_wrapping` | `bool` | `false` | Wrap per-note keys with `wrapping_key` |
+| `wrapping_key` | `string|null` | `null` | Application-provided wrapping key material |
+| `privacy_mode` | `bool` | `false` | Hide status details for missing/expired/invalid tokens |
+| `secure_delete` | `bool` | `false` | Use SQLite DELETE journal + secure_delete pragma |
 | `auto_cleanup` | `bool` | `true` | Enable automatic cleanup of old records |
 | `cleanup_days` | `int` | `15` | Days after which unviewed records are cleaned |
 | `base_url` | `string` | `null` | Base URL for generating share links |
@@ -54,13 +62,14 @@ The OpenSSL cipher method to use. Must be a valid method from `openssl_get_ciphe
 
 ```php
 $cryptnote = new CryptNote([
-    'encryption_method' => 'AES-256-CBC',  // Recommended
+    'encryption_method' => 'AES-256-GCM',  // Recommended default (AEAD)
+    'encryption_version' => 'v2',          // AEAD format
 ]);
 ```
 
 **Supported Methods** (recommended):
-- `AES-256-CBC` (default, recommended)
-- `AES-256-GCM` (authenticated encryption)
+- `AES-256-GCM` (default, AEAD with integrity)
+- `AES-256-CBC` (legacy-compatible when using `encryption_version` = `v1`)
 - `AES-128-CBC`
 
 #### token_length
@@ -111,7 +120,7 @@ $cryptnote = new CryptNote([
 | 250,000 | High | Slower |
 | 600,000 | Very High | Slow |
 
-**Recommendation**: Use at least 100,000 iterations. For high-security applications, consider 250,000+.
+**Recommendation**: Use at least 100,000 iterations. For high-security applications, consider 250,000+. Keep in mind password validation policy (`password_min_length` and optional `password_validator`).
 
 #### auto_cleanup
 
@@ -165,14 +174,16 @@ The standalone class has fewer configuration options since it doesn't handle sto
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `encryption_method` | `string` | `AES-256-CBC` | OpenSSL cipher method |
+| `encryption_method` | `string` | `AES-256-GCM` | OpenSSL cipher method (GCM default, AEAD)
+| `encryption_version` | `string` | `v2` | `v2` (AEAD) or legacy `v1` (CBC+HMAC)
 | `pbkdf2_iterations` | `int` | `100000` | PBKDF2 iterations for password derivation |
 
 ### Example
 
 ```php
 $crypto = new CryptNoteStandalone([
-    'encryption_method' => 'AES-256-CBC',
+    'encryption_method' => 'AES-256-GCM',
+    'encryption_version' => 'v2',
     'pbkdf2_iterations' => 150000,
 ]);
 ```
@@ -198,10 +209,17 @@ $cryptnote = new CryptNote([
 ```php
 $cryptnote = new CryptNote([
     'db_path' => '/var/lib/cryptnote/production.db',
-    'encryption_method' => 'AES-256-CBC',
+    'encryption_method' => 'AES-256-GCM',
+    'encryption_version' => 'v2',      // AEAD default
     'token_length' => 32,
     'max_content_length' => 50000,
-    'pbkdf2_iterations' => 250000,  // Higher security
+    'password_min_length' => 12,
+    'require_password' => false,        // set true to force passwords for all notes
+    'pbkdf2_iterations' => 250000,      // Higher security
+    'enable_key_wrapping' => false,     // set true and provide wrapping_key to wrap per-note keys
+    'wrapping_key' => null,
+    'privacy_mode' => true,             // hide status for missing/expired/invalid tokens
+    'secure_delete' => true,            // enable SQLite secure_delete + delete journal
     'auto_cleanup' => true,
     'cleanup_days' => 7,
     'base_url' => 'https://secure.example.com/view',
@@ -213,12 +231,19 @@ $cryptnote = new CryptNote([
 ```php
 $cryptnote = new CryptNote([
     'db_path' => '/secure/encrypted-volume/notes.db',
-    'encryption_method' => 'AES-256-CBC',
-    'token_length' => 64,  // Longer tokens
-    'max_content_length' => 10000,  // Limit content size
-    'pbkdf2_iterations' => 600000,  // Maximum security
+    'encryption_method' => 'AES-256-GCM',
+    'encryption_version' => 'v2',
+    'token_length' => 64,               // Longer tokens
+    'max_content_length' => 10000,      // Limit content size
+    'password_min_length' => 16,
+    'require_password' => true,
+    'pbkdf2_iterations' => 600000,      // Maximum security
+    'enable_key_wrapping' => true,
+    'wrapping_key' => getenv('CRYPTNOTE_WRAPPING_KEY'),
+    'privacy_mode' => true,
+    'secure_delete' => true,
     'auto_cleanup' => true,
-    'cleanup_days' => 1,  // Quick cleanup
+    'cleanup_days' => 1,                // Quick cleanup
     'base_url' => 'https://secure.example.com/view',
 ]);
 ```

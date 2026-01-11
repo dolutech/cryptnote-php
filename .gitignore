@@ -6,6 +6,7 @@
 *.db-journal
 *.db-wal
 *.db-shm
+.cleanup.touch
 /data/
 /examples/*/data/
 
@@ -23,7 +24,9 @@
 Thumbs.db
 
 # Composer
+composer.phar
 composer.lock
+.phpunit.cache/
 
 # PHPUnit
 .phpunit.result.cache

@@ -14,6 +14,9 @@ echo "=== CryptNote PHP Library - Basic Examples ===\n\n";
 // Initialize CryptNote
 $cryptnote = new CryptNote([
     'db_path' => __DIR__ . '/data/example.db',
+    'encryption_method' => 'AES-256-GCM',
+    'encryption_version' => 'v2',
+    'password_min_length' => 12,
 ]);
 
 // ============================================
@@ -57,7 +60,7 @@ echo "\n";
 echo "3. Creating a password-protected note...\n";
 
 $result = $cryptnote->create('This is a password-protected secret', [
-    'password' => 'mySecretPassword',
+    'password' => 'mySecretPassword123',
     'max_views' => 2,
 ]);
 
@@ -74,8 +77,22 @@ try {
 
 // View with correct password
 echo "   Viewing with correct password...\n";
-$note = $cryptnote->view($result['token'], 'mySecretPassword');
+$note = $cryptnote->view($result['token'], 'mySecretPassword123');
 echo "   Content: " . $note['content'] . "\n\n";
+
+// ============================================
+// Example 3b: Password policy enforcement (min length)
+// ============================================
+
+echo "3b. Password policy enforcement...\n";
+
+try {
+    $cryptnote->create('Short password should fail', [
+        'password' => 'short',
+    ]);
+} catch (Exception $e) {
+    echo "   Expected error: " . $e->getMessage() . "\n\n";
+}
 
 // ============================================
 // Example 4: Note with time expiration

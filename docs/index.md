@@ -4,7 +4,7 @@ A powerful, standalone PHP library for creating encrypted, self-destructing mess
 
 ## Overview
 
-CryptNote provides a secure way to share sensitive information that automatically destroys itself after being viewed. Built with security in mind, it uses AES-256-CBC encryption and PBKDF2 key derivation to protect your data.
+CryptNote provides a secure way to share sensitive information that automatically destroys itself after being viewed. Built with security in mind, it uses AES-256-GCM (AEAD) by default with PBKDF2 key derivation, while retaining legacy CBC+HMAC support for backward compatibility.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -35,7 +35,7 @@ CryptNote provides a secure way to share sensitive information that automaticall
 
 | Feature | Description |
 |---------|-------------|
-| 🔐 **AES-256-CBC Encryption** | Military-grade encryption for your messages |
+| 🔐 **AES-256-GCM Encryption** | Authenticated encryption by default; legacy CBC+HMAC supported via `encryption_version` = `v1` |
 | 🔑 **Password Protection** | Optional additional layer with PBKDF2 key derivation |
 | 👁️ **View Limits** | Messages self-destruct after a specified number of views (1-100) |
 | ⏰ **Time Expiration** | Set messages to expire after a certain time (up to 7 days) |

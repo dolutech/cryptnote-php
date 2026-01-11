@@ -1,12 +1,12 @@
 <?php
 /**
  * CryptNote - Secure Message Encryption Library
- * 
+ *
  * A standalone PHP library for creating encrypted, self-destructing messages
  * with view limits and optional password protection.
- * 
+ *
  * @package CryptNote
- * @version 1.0.0
+ * @version 0.2.0
  * @license MIT
  * @link https://github.com/dolutech/cryptnote-php
  */
@@ -22,38 +22,60 @@ use DateInterval;
 
 class CryptNote
 {
+    private const FORMAT_V1 = 'v1'; // CBC + HMAC
+    private const FORMAT_V2 = 'v2'; // GCM (AEAD)
+
     private PDO $db;
     private array $config;
+    private string $encryptionVersion;
 
     /**
      * Initialize CryptNote with configuration options.
      *
      * @param array $config Configuration options:
      *   - db_path: Path to SQLite database file (default: ./cryptnote.db)
-     *   - encryption_method: OpenSSL cipher method (default: AES-256-CBC)
+     *   - encryption_method: OpenSSL cipher method (default: AES-256-GCM)
      *   - token_length: Length of generated tokens in bytes (default: 32)
      *   - max_content_length: Maximum content length in characters (default: 50000)
-     *   - pbkdf2_iterations: PBKDF2 iterations for password derivation (default: 10000)
+     *   - pbkdf2_iterations: PBKDF2 iterations for password derivation (default: 100000)
      *   - auto_cleanup: Enable automatic cleanup of old records (default: true)
      *   - cleanup_days: Days after which unviewed records are cleaned (default: 15)
+     *   - encryption_version: v2 (AEAD) or v1 (legacy)
+     *   - enable_key_wrapping: Whether to wrap per-note keys with a wrapping key
+     *   - wrapping_key: App-provided wrapping key (string)
+     *   - password_min_length: Minimum password length (default: 12)
+     *   - password_validator: Optional callable validator
+     *   - privacy_mode: If true, status() returns not_found for missing/expired/invalid
+     *   - require_password: If true, all notes must have password
+     *   - secure_delete: If true, use delete journal mode and secure_delete pragma
      */
     public function __construct(array $config = [])
     {
         $this->config = array_merge([
             'db_path' => __DIR__ . '/../data/cryptnote.db',
-            'encryption_method' => 'AES-256-CBC',
+            'encryption_method' => 'AES-256-GCM',
             'token_length' => 32,
             'max_content_length' => 50000,
             'pbkdf2_iterations' => 100000,
             'auto_cleanup' => true,
             'cleanup_days' => 15,
+            'encryption_version' => self::FORMAT_V2,
+            'enable_key_wrapping' => false,
+            'wrapping_key' => null,
+            'password_min_length' => 12,
+            'password_validator' => null,
+            'privacy_mode' => false,
+            'require_password' => false,
+            'secure_delete' => false,
         ], $config);
 
-        // Validate encryption method
-        $validMethods = openssl_get_cipher_methods();
-        if (!in_array($this->config['encryption_method'], $validMethods, true)) {
+        // Validate encryption method (case-insensitive comparison)
+        $validMethods = array_map('strtolower', openssl_get_cipher_methods());
+        if (!in_array(strtolower($this->config['encryption_method']), $validMethods, true)) {
             throw new Exception('Invalid encryption method: ' . $this->config['encryption_method']);
         }
+
+        $this->encryptionVersion = $this->config['encryption_version'] === self::FORMAT_V1 ? self::FORMAT_V1 : self::FORMAT_V2;
 
         $this->initDatabase();
 
@@ -97,16 +119,26 @@ class CryptNote
             $isMarkdown = false;
         }
 
-        // Validate password if provided
+        // Validate password if provided or required
         $hasPassword = false;
         if ($password !== null && $password !== '') {
-            if (strlen($password) < 6) {
-                throw new Exception('Password must be at least 6 characters');
+            $minLen = (int)$this->config['password_min_length'];
+            if (strlen($password) < $minLen) {
+                throw new Exception('Password must be at least ' . $minLen . ' characters');
             }
             if (strlen($password) > 100) {
                 throw new Exception('Password cannot exceed 100 characters');
             }
+            if (is_callable($this->config['password_validator'])) {
+                $validator = $this->config['password_validator'];
+                $isValid = $validator($password);
+                if ($isValid === false) {
+                    throw new Exception('Password does not meet policy requirements');
+                }
+            }
             $hasPassword = true;
+        } elseif ($this->config['require_password']) {
+            throw new Exception('Password is required by configuration');
         }
 
         // Calculate expiration
@@ -131,16 +163,21 @@ class CryptNote
         }
 
         // Generate encryption key and encrypt content
-        $encryptionKey = $this->generateEncryptionKey();
+        $rawEncryptionKey = $this->generateEncryptionKey();
+        $storedEncryptionKey = $rawEncryptionKey;
+
+        if ($this->config['enable_key_wrapping'] && $this->config['wrapping_key']) {
+            $storedEncryptionKey = $this->wrapKey($rawEncryptionKey, $this->config['wrapping_key']);
+        }
         
         if ($hasPassword) {
-            $encryptedData = $this->encryptWithPassword($content, $encryptionKey, $password);
+            $encryptedData = $this->encryptWithPassword($content, $rawEncryptionKey, $password);
         } else {
-            $encryptedData = $this->encrypt($content, $encryptionKey);
+            $encryptedData = $this->encryptPayload($content, $rawEncryptionKey);
         }
 
         // Store in database
-        $this->store($token, $encryptedData, $encryptionKey, $hasPassword, $maxViews, $isMarkdown, $isHtml, $expiresAt);
+        $this->store($token, $encryptedData, $storedEncryptionKey, $hasPassword, $maxViews, $isMarkdown, $isHtml, $expiresAt);
 
         $result = [
             'success' => true,
@@ -188,21 +225,26 @@ class CryptNote
             $isMarkdown = false;
         }
 
+        $storedKey = $record['encryption_key'];
+        if ($this->config['enable_key_wrapping'] && $this->config['wrapping_key']) {
+            $storedKey = $this->unwrapKey($storedKey, $this->config['wrapping_key']);
+        }
+
         // Decrypt content
         if ($hasPassword) {
             if ($password === null || $password === '') {
                 throw new Exception('Password required');
             }
             try {
-                $content = $this->decryptWithPassword($record['encrypted_data'], $record['encryption_key'], $password);
+                $content = $this->decryptWithPassword($record['encrypted_data'], $storedKey, $password);
             } catch (Exception $e) {
                 throw new Exception('Incorrect password');
             }
         } else {
-            $content = $this->decrypt($record['encrypted_data'], $record['encryption_key']);
+            $content = $this->decryptPayload($record['encrypted_data'], $storedKey);
         }
 
-        // Decrement views and delete if necessary
+        // Decrement views atomically and delete if necessary
         $remainingViews = $this->decrementViews($token);
         
         if ($remainingViews <= 0) {
@@ -230,7 +272,7 @@ class CryptNote
     public function status(string $token): array
     {
         if (!$this->validateTokenFormat($token)) {
-            return ['success' => true, 'status' => 'invalid_token'];
+            return ['success' => true, 'status' => $this->config['privacy_mode'] ? 'not_found' : 'invalid_token'];
         }
 
         $sql = "SELECT has_password, is_markdown, is_html, max_views, remaining_views, expires_at, created_at 
@@ -243,7 +285,6 @@ class CryptNote
             return ['success' => true, 'status' => 'not_found'];
         }
 
-        // Check expiration
         $now = new DateTime('now', new DateTimeZone('UTC'));
         $expiredByTime = false;
         if (!empty($record['expires_at'])) {
@@ -251,6 +292,10 @@ class CryptNote
         }
         $expiredByViews = ((int)$record['remaining_views']) <= 0;
         $status = ($expiredByTime || $expiredByViews) ? 'expired' : 'active';
+
+        if ($this->config['privacy_mode'] && $status !== 'active') {
+            return ['success' => true, 'status' => 'not_found'];
+        }
 
         return [
             'success' => true,
@@ -281,9 +326,6 @@ class CryptNote
 
     // ==================== ENCRYPTION METHODS ====================
 
-    /**
-     * Generate a secure random token.
-     */
     private function generateToken(): string
     {
         $length = $this->config['token_length'];
@@ -295,34 +337,120 @@ class CryptNote
         return bin2hex(substr($finalHash, 0, $length));
     }
 
-    /**
-     * Generate a random encryption key.
-     */
     private function generateEncryptionKey(): string
     {
         return base64_encode(random_bytes(32));
     }
 
-    /**
-     * Encrypt content using AES-256-CBC.
-     */
-    private function encrypt(string $data, string $key): string
+    private function wrapKey(string $base64Key, string $wrappingKey): string
     {
-        $method = $this->config['encryption_method'];
-        $iv = random_bytes(16);
-        
-        $encrypted = openssl_encrypt($data, $method, base64_decode($key), OPENSSL_RAW_DATA, $iv);
-        
-        if ($encrypted === false) {
-            throw new Exception('Encryption failed');
+        $keyMaterial = hash('sha256', $wrappingKey, true);
+        $iv = random_bytes(12);
+        $tag = '';
+        $cipher = openssl_encrypt($base64Key, 'aes-256-gcm', $keyMaterial, OPENSSL_RAW_DATA, $iv, $tag, '', 16);
+        if ($cipher === false || $tag === '') {
+            throw new Exception('Key wrapping failed');
         }
-        
-        return base64_encode($iv . $encrypted);
+        return 'wk1:' . base64_encode($iv . $tag . $cipher);
     }
 
-    /**
-     * Encrypt content with password using AES-256-CBC and PBKDF2.
-     */
+    private function unwrapKey(string $storedKey, string $wrappingKey): string
+    {
+        if (!str_starts_with($storedKey, 'wk1:')) {
+            return $storedKey;
+        }
+        $payload = base64_decode(substr($storedKey, 4), true);
+        if ($payload === false || strlen($payload) < 28) {
+            throw new Exception('Invalid wrapped key data');
+        }
+        $iv = substr($payload, 0, 12);
+        $tag = substr($payload, 12, 16);
+        $cipher = substr($payload, 28);
+        $keyMaterial = hash('sha256', $wrappingKey, true);
+        $plain = openssl_decrypt($cipher, 'aes-256-gcm', $keyMaterial, OPENSSL_RAW_DATA, $iv, $tag, '');
+        if ($plain === false) {
+            throw new Exception('Key unwrapping failed');
+        }
+        return $plain;
+    }
+
+    private function encryptPayload(string $data, string $base64Key): string
+    {
+        $method = $this->config['encryption_method'];
+        $keyBytes = base64_decode($base64Key, true);
+        if ($keyBytes === false) {
+            throw new Exception('Invalid key');
+        }
+
+        $useV2 = $this->encryptionVersion === self::FORMAT_V2 && stripos($method, 'gcm') !== false;
+        if ($useV2) {
+            $iv = random_bytes(12);
+            $tag = '';
+            $cipher = openssl_encrypt($data, $method, $keyBytes, OPENSSL_RAW_DATA, $iv, $tag, '', 16);
+            if ($cipher === false || $tag === '') {
+                throw new Exception('Encryption failed');
+            }
+            return 'v2:' . base64_encode($iv . $tag . $cipher);
+        }
+
+        // v1 legacy with HMAC (always uses AES-256-CBC)
+        $iv = random_bytes(16);
+        $cipher = openssl_encrypt($data, 'AES-256-CBC', $keyBytes, OPENSSL_RAW_DATA, $iv);
+        if ($cipher === false) {
+            throw new Exception('Encryption failed');
+        }
+        $payload = $iv . $cipher;
+        $macKey = hash('sha256', $keyBytes . 'mac', true);
+        $hmac = hash_hmac('sha256', $payload, $macKey, true);
+        return 'v1:' . base64_encode($payload . $hmac);
+    }
+
+    private function decryptPayload(string $payload, string $base64Key): string
+    {
+        $method = $this->config['encryption_method'];
+        $keyBytes = base64_decode($base64Key, true);
+        if ($keyBytes === false) {
+            throw new Exception('Invalid key');
+        }
+
+        if (str_starts_with($payload, 'v2:')) {
+            $raw = base64_decode(substr($payload, 3), true);
+            if ($raw === false || strlen($raw) < 28) {
+                throw new Exception('Invalid encrypted data');
+            }
+            $iv = substr($raw, 0, 12);
+            $tag = substr($raw, 12, 16);
+            $cipher = substr($raw, 28);
+            $plain = openssl_decrypt($cipher, $method, $keyBytes, OPENSSL_RAW_DATA, $iv, $tag, '');
+            if ($plain === false) {
+                throw new Exception('Decryption failed');
+            }
+            return $plain;
+        }
+
+        if (!str_starts_with($payload, 'v1:')) {
+            throw new Exception('Unsupported encrypted format');
+        }
+        // v1 always uses AES-256-CBC
+        $raw = base64_decode(substr($payload, 3), true);
+        if ($raw === false || strlen($raw) < 48) {
+            throw new Exception('Invalid encrypted data');
+        }
+        $iv = substr($raw, 0, 16);
+        $cipher = substr($raw, 16, -32);
+        $hmac = substr($raw, -32);
+        $macKey = hash('sha256', $keyBytes . 'mac', true);
+        $calcHmac = hash_hmac('sha256', $iv . $cipher, $macKey, true);
+        if (!hash_equals($hmac, $calcHmac)) {
+            throw new Exception('Decryption failed');
+        }
+        $plain = openssl_decrypt($cipher, 'AES-256-CBC', $keyBytes, OPENSSL_RAW_DATA, $iv);
+        if ($plain === false) {
+            throw new Exception('Decryption failed');
+        }
+        return $plain;
+    }
+
     private function encryptWithPassword(string $data, string $key, string $password): string
     {
         $salt = random_bytes(16);
@@ -332,78 +460,90 @@ class CryptNote
         $combinedKey = hash('sha256', base64_decode($key) . $passwordKey, true);
         $finalKey = base64_encode($combinedKey);
         
-        $method = $this->config['encryption_method'];
-        $iv = random_bytes(16);
-        
-        $encrypted = openssl_encrypt($data, $method, base64_decode($finalKey), OPENSSL_RAW_DATA, $iv);
-        
-        if ($encrypted === false) {
-            throw new Exception('Encryption with password failed');
-        }
-        
-        return base64_encode($salt . $iv . $encrypted);
+        return $this->encryptPayloadWithKey($data, $finalKey, $salt);
     }
 
-    /**
-     * Decrypt content using AES-256-CBC.
-     */
-    private function decrypt(string $encryptedData, string $key): string
+    private function encryptPayloadWithKey(string $data, string $base64Key, ?string $salt = null): string
     {
         $method = $this->config['encryption_method'];
-        $data = base64_decode($encryptedData);
-        
-        if ($data === false || strlen($data) < 16) {
-            throw new Exception('Invalid encrypted data');
+        $keyBytes = base64_decode($base64Key, true);
+        if ($keyBytes === false) {
+            throw new Exception('Invalid key');
         }
-        
-        $iv = substr($data, 0, 16);
-        $encrypted = substr($data, 16);
-        
-        $decrypted = openssl_decrypt($encrypted, $method, base64_decode($key), OPENSSL_RAW_DATA, $iv);
-        
-        if ($decrypted === false) {
-            throw new Exception('Decryption failed');
+        $useV2 = $this->encryptionVersion === self::FORMAT_V2 && stripos($method, 'gcm') !== false;
+        if ($useV2) {
+            $iv = random_bytes(12);
+            $tag = '';
+            $cipher = openssl_encrypt($data, $method, $keyBytes, OPENSSL_RAW_DATA, $iv, $tag, '', 16);
+            if ($cipher === false || $tag === '') {
+                throw new Exception('Encryption with password failed');
+            }
+            $payload = ($salt ?? '') . $iv . $tag . $cipher;
+            return 'v2:' . base64_encode($payload);
         }
-        
-        return $decrypted;
+        // v1 legacy with HMAC (always uses AES-256-CBC)
+        $iv = random_bytes(16);
+        $cipher = openssl_encrypt($data, 'AES-256-CBC', $keyBytes, OPENSSL_RAW_DATA, $iv);
+        if ($cipher === false) {
+            throw new Exception('Encryption with password failed');
+        }
+        $payload = ($salt ?? '') . $iv . $cipher;
+        $macKey = hash('sha256', $keyBytes . 'mac', true);
+        $hmac = hash_hmac('sha256', $payload, $macKey, true);
+        return 'v1:' . base64_encode($payload . $hmac);
     }
 
-    /**
-     * Decrypt content with password using AES-256-CBC and PBKDF2.
-     */
     private function decryptWithPassword(string $encryptedData, string $key, string $password): string
     {
         $method = $this->config['encryption_method'];
-        $data = base64_decode($encryptedData);
-        
-        if ($data === false || strlen($data) < 32) {
+        if (str_starts_with($encryptedData, 'v2:')) {
+            $raw = base64_decode(substr($encryptedData, 3), true);
+            if ($raw === false || strlen($raw) < 44) {
+                throw new Exception('Invalid encrypted data');
+            }
+            $salt = substr($raw, 0, 16);
+            $iv = substr($raw, 16, 12);
+            $tag = substr($raw, 28, 16);
+            $cipher = substr($raw, 44);
+            $iterations = $this->config['pbkdf2_iterations'];
+            $passwordKey = hash_pbkdf2('sha256', $password, $salt, $iterations, 32, true);
+            $combinedKey = hash('sha256', base64_decode($key) . $passwordKey, true);
+            $plain = openssl_decrypt($cipher, $method, $combinedKey, OPENSSL_RAW_DATA, $iv, $tag, '');
+            if ($plain === false) {
+                throw new Exception('Decryption with password failed');
+            }
+            return $plain;
+        }
+
+        if (!str_starts_with($encryptedData, 'v1:')) {
             throw new Exception('Invalid encrypted data');
         }
-        
+        // v1 always uses AES-256-CBC
+        $data = base64_decode(substr($encryptedData, 3), true);
+        if ($data === false || strlen($data) < 64) {
+            throw new Exception('Invalid encrypted data');
+        }
         $salt = substr($data, 0, 16);
         $iv = substr($data, 16, 16);
-        $encrypted = substr($data, 32);
-        
+        $encrypted = substr($data, 32, -32);
+        $hmac = substr($data, -32);
         $iterations = $this->config['pbkdf2_iterations'];
         $passwordKey = hash_pbkdf2('sha256', $password, $salt, $iterations, 32, true);
-        
         $combinedKey = hash('sha256', base64_decode($key) . $passwordKey, true);
-        $finalKey = base64_encode($combinedKey);
-        
-        $decrypted = openssl_decrypt($encrypted, $method, base64_decode($finalKey), OPENSSL_RAW_DATA, $iv);
-        
+        $macKey = hash('sha256', $combinedKey . 'mac', true);
+        $calcHmac = hash_hmac('sha256', $salt . $iv . $encrypted, $macKey, true);
+        if (!hash_equals($hmac, $calcHmac)) {
+            throw new Exception('Decryption with password failed');
+        }
+        $decrypted = openssl_decrypt($encrypted, 'AES-256-CBC', $combinedKey, OPENSSL_RAW_DATA, $iv);
         if ($decrypted === false) {
             throw new Exception('Decryption with password failed');
         }
-        
         return $decrypted;
     }
 
     // ==================== DATABASE METHODS ====================
 
-    /**
-     * Initialize SQLite database.
-     */
     private function initDatabase(): void
     {
         $dbPath = $this->config['db_path'];
@@ -419,8 +559,14 @@ class CryptNote
             $this->db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
             
             $this->db->exec('PRAGMA foreign_keys = ON');
-            $this->db->exec('PRAGMA journal_mode = WAL');
-            $this->db->exec('PRAGMA synchronous = FULL');
+            if ($this->config['secure_delete']) {
+                $this->db->exec('PRAGMA journal_mode = DELETE');
+                $this->db->exec('PRAGMA secure_delete = ON');
+                $this->db->exec('PRAGMA synchronous = FULL');
+            } else {
+                $this->db->exec('PRAGMA journal_mode = WAL');
+                $this->db->exec('PRAGMA synchronous = FULL');
+            }
 
             $this->createTables();
         } catch (PDOException $e) {
@@ -428,16 +574,13 @@ class CryptNote
         }
     }
 
-    /**
-     * Create database tables.
-     */
     private function createTables(): void
     {
         $sql = "
             CREATE TABLE IF NOT EXISTS encrypted_content (
                 token VARCHAR(64) PRIMARY KEY,
                 encrypted_data TEXT NOT NULL,
-                encryption_key VARCHAR(64) NOT NULL,
+                encryption_key TEXT NOT NULL,
                 has_password BOOLEAN DEFAULT FALSE,
                 is_markdown BOOLEAN DEFAULT FALSE,
                 is_html BOOLEAN DEFAULT FALSE,
@@ -453,17 +596,11 @@ class CryptNote
         $this->db->exec("CREATE INDEX IF NOT EXISTS idx_expires_at ON encrypted_content(expires_at)");
     }
 
-    /**
-     * Validate token format.
-     */
     private function validateTokenFormat(string $token): bool
     {
         return is_string($token) && strlen($token) === 64 && preg_match('/^[a-f0-9]{64}$/i', $token);
     }
 
-    /**
-     * Check if token exists.
-     */
     private function tokenExists(string $token): bool
     {
         $stmt = $this->db->prepare("SELECT 1 FROM encrypted_content WHERE token = ?");
@@ -471,9 +608,6 @@ class CryptNote
         return $stmt->fetch() !== false;
     }
 
-    /**
-     * Store encrypted content.
-     */
     private function store(string $token, string $encryptedData, string $encryptionKey, bool $hasPassword, int $maxViews, bool $isMarkdown, bool $isHtml, ?string $expiresAt): void
     {
         $sql = "INSERT INTO encrypted_content (token, encrypted_data, encryption_key, has_password, is_markdown, is_html, max_views, remaining_views, expires_at) 
@@ -482,9 +616,6 @@ class CryptNote
         $stmt->execute([$token, $encryptedData, $encryptionKey, $hasPassword ? 1 : 0, $isMarkdown ? 1 : 0, $isHtml ? 1 : 0, $maxViews, $maxViews, $expiresAt]);
     }
 
-    /**
-     * Get record by token.
-     */
     private function getRecord(string $token): ?array
     {
         $sql = "SELECT * FROM encrypted_content 
@@ -496,61 +627,50 @@ class CryptNote
         return $record ?: null;
     }
 
-    /**
-     * Decrement remaining views.
-     */
     private function decrementViews(string $token): int
     {
         $this->db->beginTransaction();
         try {
-            $stmt = $this->db->prepare("SELECT remaining_views FROM encrypted_content WHERE token = ?");
+            $stmt = $this->db->prepare("UPDATE encrypted_content SET remaining_views = remaining_views - 1 WHERE token = ? AND remaining_views > 0 RETURNING remaining_views");
             $stmt->execute([$token]);
             $row = $stmt->fetch();
+            $remainingViews = $row ? (int)$row['remaining_views'] : -1;
+            // Close cursor to release statement before commit
+            $stmt->closeCursor();
+            $stmt = null;
             
-            if (!$row) {
+            if ($remainingViews < 0) {
                 $this->db->rollBack();
                 return 0;
             }
-            
-            $newRemaining = max(0, (int)$row['remaining_views'] - 1);
-            
-            $stmt = $this->db->prepare("UPDATE encrypted_content SET remaining_views = ? WHERE token = ?");
-            $stmt->execute([$newRemaining, $token]);
-            
             $this->db->commit();
-            return $newRemaining;
+            return max(0, $remainingViews);
         } catch (PDOException $e) {
             $this->db->rollBack();
             throw $e;
         }
     }
 
-    /**
-     * Securely delete a record.
-     */
     private function secureDelete(string $token): bool
     {
         try {
-            // Overwrite with random data first
             $randomData = base64_encode(random_bytes(1024));
             $randomKey = base64_encode(random_bytes(64));
-            
             $stmt = $this->db->prepare("UPDATE encrypted_content SET encrypted_data = ?, encryption_key = ? WHERE token = ?");
             $stmt->execute([$randomData, $randomKey, $token]);
-            
-            // Then delete
             $stmt = $this->db->prepare("DELETE FROM encrypted_content WHERE token = ?");
             $stmt->execute([$token]);
-            
+
+            if ($this->config['secure_delete']) {
+                $this->db->exec('VACUUM');
+            }
+
             return true;
         } catch (PDOException $e) {
             return false;
         }
     }
 
-    /**
-     * Cleanup old records.
-     */
     private function maybeCleanup(): void
     {
         $dbDir = dirname($this->config['db_path']);
@@ -563,21 +683,15 @@ class CryptNote
 
         try {
             $days = max(1, (int)$this->config['cleanup_days']);
-            
-            // Use prepared statement to avoid SQL injection
             $stmt = $this->db->prepare("DELETE FROM encrypted_content 
                     WHERE expires_at IS NULL 
                     AND remaining_views = max_views 
                     AND created_at < datetime('now', '-' || ? || ' days')");
             $stmt->execute([$days]);
             $deleted = $stmt->rowCount();
-            
-            // Also delete expired records
             $this->db->exec("DELETE FROM encrypted_content WHERE expires_at IS NOT NULL AND expires_at < datetime('now')");
-            
             @touch($marker, $now);
-            
-            if ($deleted > 0) {
+            if ($deleted > 0 && !$this->config['secure_delete']) {
                 $this->db->exec('VACUUM');
             }
         } catch (PDOException $e) {
@@ -585,9 +699,6 @@ class CryptNote
         }
     }
 
-    /**
-     * Get database statistics.
-     */
     public function getStats(): array
     {
         $stats = [];

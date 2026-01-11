@@ -13,9 +13,19 @@ require_once __DIR__ . '/../../src/CryptNote.php';
 use CryptNote\CryptNote;
 
 // Initialize CryptNote
+// Note: In production, use a hardcoded base_url or validate against an allowlist
+$allowedHosts = ['localhost:8080', 'localhost', '127.0.0.1:8080'];
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost:8080';
+if (!in_array($host, $allowedHosts, true)) {
+    $host = 'localhost:8080';
+}
+
 $cryptnote = new CryptNote([
     'db_path' => __DIR__ . '/data/notes.db',
-    'base_url' => 'http://' . ($_SERVER['HTTP_HOST'] ?? 'localhost:8080') . '/view.php',
+    'base_url' => 'http://' . $host . '/view.php',
+    'encryption_method' => 'AES-256-GCM',
+    'encryption_version' => 'v2',
+    'password_min_length' => 12,
 ]);
 
 $message = '';
@@ -37,6 +47,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if (!empty($_POST['password'])) {
             $options['password'] = $_POST['password'];
+        }
+
+        // Enforce minimum length in UI feedback
+        if (!empty($_POST['password']) && strlen($_POST['password']) < 12) {
+            throw new Exception('Password must be at least 12 characters');
         }
         
         if (!empty($_POST['expire_minutes'])) {
